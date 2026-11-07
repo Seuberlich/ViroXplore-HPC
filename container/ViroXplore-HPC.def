@@ -1,0 +1,36 @@
+# ViroXplore-HPC v1.0.0 build recipe. New builds require independent validation.
+# Build from the directory containing environment.yml and the helper scripts.
+# Requires permission to build definition files via fakeroot on the HPC.
+Bootstrap: docker
+From: mambaorg/micromamba:2.10.0
+
+%labels
+    org.opencontainers.image.title ViroXplore-HPC
+    org.opencontainers.image.version 1.0.0
+    org.opencontainers.image.description Bioinformatics runtime for ViroXplore-HPC
+
+%files
+    environment.yml /opt/viroxplore/environment.yml
+    module_compat.sh /opt/viroxplore/module_compat.sh
+    smoke_test.sh /opt/viroxplore/smoke_test.sh
+
+%post
+    set -eu
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH=/opt/conda/bin:/usr/local/bin:/usr/bin:/bin:$PATH
+    command -v micromamba
+    test -s /opt/viroxplore/environment.yml || { echo "ERROR: /opt/viroxplore/environment.yml missing" >&2; exit 1; }
+    micromamba install -y -n base -f /opt/viroxplore/environment.yml
+    micromamba clean --all --yes
+    chmod 755 /opt/viroxplore/module_compat.sh /opt/viroxplore/smoke_test.sh
+
+%environment
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH=/opt/conda/bin:$PATH
+
+%test
+    /bin/bash /opt/viroxplore/smoke_test.sh
+
+%help
+    ViroXplore-HPC 1.0.0 candidate. Run apptainer exec IMAGE /bin/bash /opt/viroxplore/smoke_test.sh. A fresh SIF requires PE/SE validation.
+    Data and databases must be bound from the host. Full workflow not yet container-validated.

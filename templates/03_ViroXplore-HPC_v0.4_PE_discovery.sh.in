@@ -1,0 +1,81 @@
+#!/bin/bash
+#SBATCH --time=24:00:00
+#SBATCH --mem=200g
+#SBATCH --partition=PUT_SLURM_PARTITION_HERE
+#SBATCH --job-name=03_discovery_PE
+#SBATCH --output=PUT_PATH_HERE/03_discovery.%A.%a.o
+#SBATCH --error=PUT_PATH_HERE/03_discovery.%A.%a.e
+#SBATCH --array=PUT_ARRAY_HERE
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+
+# DIAMOND 2.2.5 virus discovery against a PHYSICAL viral-only nr database,
+# including all phages/archaeal viruses, followed by conservative host filtering.
+# Original pipeline folder names + output table and finalviralhits.fasta retained.
+# Configure together with all pipeline scripts using ViroXplore-HPC_config.sh.
+set -Eeuo pipefail
+trap 'echo "ERROR: discovery failed at line $LINENO (status $?)." >&2' ERR
+
+WORKDIR=PUT_PATH_HERE
+FILE_NAME=PUT_SAMPLE_NAMES_HERE
+OUTPUT_DIRECTORY="$WORKDIR/05_discovery"
+ASSEMBLY_DIRECTORY="$WORKDIR/04_assembly"
+ASSEMBLY_FASTA="scaffolds_filtered.fasta"
+DMND_DB="PUT_REFERENCE_ROOT_HERE/viral_nr/viral_all_nr.dmnd"
+TAXONOMY_DIR="PUT_REFERENCE_ROOT_HERE/ncbi_taxonomy"
+FILTER_SCRIPT="$WORKDIR/tools/filter_discovery_hits.py"
+MODULE_DIAMOND=diamond/2.2.5
+MODULE_PYTHON=Python/3.9.5-GCCcore-10.3.0
+MAX_TARGET_SEQS=100   # store alternatives BEFORE post-BLAST taxonomic filtering
+
+TASK_ID=${SLURM_ARRAY_TASK_ID:-1}
+if ! [[ "$TASK_ID" =~ ^[0-9]+$ ]] || (( TASK_ID < 1 || TASK_ID > ${#FILE_NAME[@]} )); then
+    echo "ERROR: SLURM array task $TASK_ID not covered by sample list (${#FILE_NAME[@]} samples)." >&2
+    exit 1
+fi
+SAMPLE_NAME="${FILE_NAME[$((TASK_ID-1))]}"
+THREADS="${SLURM_CPUS_PER_TASK:-8}"
+INPUT="$ASSEMBLY_DIRECTORY/$SAMPLE_NAME/$ASSEMBLY_FASTA"
+TMPDIR="$OUTPUT_DIRECTORY/tmp/$SAMPLE_NAME"
+mkdir -p "$TMPDIR" "$OUTPUT_DIRECTORY"
+
+[[ -s "$DMND_DB" ]] || { echo "ERROR: DIAMOND database missing or empty: $DMND_DB" >&2; exit 1; }
+[[ -s "$INPUT" ]] || { echo "ERROR: assembly FASTA missing or empty: $INPUT" >&2; exit 1; }
+[[ -f "$TAXONOMY_DIR/nodes.dmp" && -f "$TAXONOMY_DIR/names.dmp" ]] || { echo "ERROR: NCBI taxonomy files absent in $TAXONOMY_DIR" >&2; exit 1; }
+[[ -f "$FILTER_SCRIPT" ]] || { echo "ERROR: missing taxonomic filter: $FILTER_SCRIPT (run ViroXplore-HPC_config.sh)" >&2; exit 1; }
+command -v module >/dev/null 2>&1 || { echo 'ERROR: HPC module command unavailable' >&2; exit 1; }
+module load "$MODULE_DIAMOND"
+module load "$MODULE_PYTHON"
+command -v diamond >/dev/null 2>&1 || { echo 'ERROR: diamond executable not found' >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo 'ERROR: python3 executable not found' >&2; exit 1; }
+
+echo "ViroXplore-HPC: sample $SAMPLE_NAME; mode: PE; host: $(hostname); started: $(date)"
+echo "Database: $DMND_DB (phages + archaeal viruses included)"
+echo "Taxonomy: $TAXONOMY_DIR; threads: $THREADS; targets/query: $MAX_TARGET_SEQS"
+cd "$TMPDIR"
+cp -- "$INPUT" "$ASSEMBLY_FASTA"
+
+diamond blastx \
+  --db "$DMND_DB" \
+  --query "$ASSEMBLY_FASTA" \
+  --out "${SAMPLE_NAME}_blastx_all_viral.tsv" \
+  --threads "$THREADS" \
+  --max-target-seqs "$MAX_TARGET_SEQS" \
+  --outfmt 6 qseqid sseqid staxids stitle pident length evalue bitscore
+
+# No --taxonlist: database is already viral and the aim is to preserve all
+# candidates for post-search taxonomy filtering (not to discard phages early).
+# A hit with multiple TaxIDs or ambiguous host is written to REVIEW.
+python3 "$FILTER_SCRIPT" \
+  --hits "${SAMPLE_NAME}_blastx_all_viral.tsv" \
+  --taxonomy "$TAXONOMY_DIR" \
+  --assembly "$ASSEMBLY_FASTA" \
+  --sample "$SAMPLE_NAME" \
+  --output "$OUTPUT_DIRECTORY" \
+  --final-fasta "finalviralhits.fasta"
+
+# Preserve the original location expected by step 04 remapping.
+cp -- finalviralhits.fasta "$ASSEMBLY_DIRECTORY/$SAMPLE_NAME/finalviralhits.fasta"
+# Preserve the complete DIAMOND search result for audit / later refiltering.
+cp -- "${SAMPLE_NAME}_blastx_all_viral.tsv" "$OUTPUT_DIRECTORY/${SAMPLE_NAME}_DMND_all_raw_hits.tsv"
+echo "Discovery finished: $(date)"
