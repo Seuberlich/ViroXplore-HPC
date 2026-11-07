@@ -1,0 +1,56 @@
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+*~
+*.swp
+__pycache__/
+*.py[cod]
+
+# Generated pipeline configurations, logs and backups
+.pipeline_configuration.json
+.configuration_backups/
+pipeline_runs/
+*.o
+*.e
+*.out
+*.err
+slurm-*.out
+
+# Large biological inputs, references and results
+reads/
+01_fastqc/
+02_trimmed/
+03_aligned/
+04_assembly/
+04b_mapping/
+05_discovery/
+06_remapping/
+tmp/
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.fasta
+*.fasta.gz
+*.fna
+*.fa
+*.faa
+*.bam
+*.bai
+*.sam
+*.bt2
+*.bt2l
+*.dmnd
+*.bed
+*.dmp
+*.tsv
+*.xls
+*.gz
+*.sif
+
+# Python environments and local secrets
+.venv/
+.env
+.env.*
+*.pem
+*private_key*

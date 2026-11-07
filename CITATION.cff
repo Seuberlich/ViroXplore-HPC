@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use ViroXplore-HPC, please cite this software release."
+type: software
+title: "ViroXplore-HPC: an automated SLURM-based workflow for virus discovery from high-throughput sequencing data"
+version: "1.0.0"
+license: "BSD-3-Clause"
+authors:
+  - family-names: "Koch"
+    given-names: "Michel C."
+    affiliation: "Division of Neurological Sciences, Vetsuisse Faculty, University of Bern, Bern, Switzerland"
+  - family-names: "Seuberlich"
+    given-names: "Torsten"
+    affiliation: "Division of Neurological Sciences, Vetsuisse Faculty, University of Bern, Bern, Switzerland"
+# Add repository-code and DOI after GitHub publication / Zenodo archival.
