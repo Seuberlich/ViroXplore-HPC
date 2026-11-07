@@ -1,3 +1,10 @@
+## v1.0.0 GitHub publication review (2026-11-08)
+
+- Restored complete source package for repository upload, including nested directories.
+- Reconciled outdated container-validation statements in README.
+- Removed institution-specific default reference path from offline metadata SLURM wrapper.
+- Added docs/GITHUB_RELEASE_REVIEW.md. No changes to analysis templates.
+
 ## v1.0.0 — GitHub source release package (2026-11-07; publication pending)
 
 - PE and SE F17 workflow runs successfully completed using newly built v1.0.0 Apptainer image on IBU. See `docs/V1_CONTAINER_PE_SE_VALIDATION.md`.

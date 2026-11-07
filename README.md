@@ -6,7 +6,7 @@
 
 ViroXplore-HPC integrates read quality assessment, trimming and host-read removal, *de novo* assembly, nucleotide-reference mapping, protein similarity searches, taxonomic classification, and remapping/coverage visualization. It supports **paired-end (PE)** and **single-end (SE)** FASTQ data and provides both individual SLURM jobs and a dependency-managed five-stage master submission.
 
-**Software v1.0.0 release package (not yet published; based on RC11 FIX3).** Two software authors are credited in [`AUTHORS.md`](AUTHORS.md) and [`CITATION.cff`](CITATION.cff). The included source code is offered under the [BSD 3-Clause License](LICENSE), subject to the team confirming rights to any reused material in the remaining scripts before making the repository public. The two no-longer-used `KeepBestLines` utilities have been removed.
+**Software version 1.0.0 (based on the validated RC11 FIX3 workflow).** Two software authors are credited in [`AUTHORS.md`](AUTHORS.md) and [`CITATION.cff`](CITATION.cff). The included source code is offered under the [BSD 3-Clause License](LICENSE), The authors must verify the provenance and licensing of any reused source material before distributing the final release. The two no-longer-used `KeepBestLines` utilities have been removed.
 
 **Important — library-specific trimming:** The stage-01 `fastp` settings were configured for the Lexogen CORALL Total RNA libraries used in validation. They must be reviewed and, where necessary, adapted for other library preparation protocols before analysis. See [library-specific trimming guidance](docs/LIBRARY_SPECIFIC_TRIMMING.md).
 
@@ -51,7 +51,7 @@ bash ViroXplore-HPC_master.sh
 squeue -u "$USER"
 ```
 
-**RC7 safety check:** Before `--dry-run` succeeds or any job is submitted, the master verifies that the required per-sample gzipped FASTQs exist and are nonempty (R1+R2 for PE, R1 for SE), and visibly reports the selected mode. It warns when an SE analysis would ignore a present R2 file. Stage 01 repeats the existence check during execution. These checks do not establish paired FASTQ synchrony or full integrity; see [installation](docs/INSTALLATION.md).
+**Input preflight:** Before `--dry-run` succeeds or any job is submitted, the master verifies that the required per-sample gzipped FASTQs exist and are nonempty (R1+R2 for PE, R1 for SE), and visibly reports the selected mode. It warns when an SE analysis would ignore a present R2 file. Stage 01 repeats the existence check during execution. These checks do not establish paired FASTQ synchrony or full integrity; see [installation](docs/INSTALLATION.md).
 
 The central configurator expects a project directory containing `reads/`. Set `SLURM_PARTITION` to an accessible partition on your cluster (e.g. `pibu_el8`). It is written into each generated `#SBATCH --partition` directive and passed explicitly by the master to `sbatch --partition`, so manual and master submissions use the same partition. With `SEQUENCING_MODE=PE`, only five PE `.sh` files are generated in the pipeline root (and conversely for SE). The ten `.sh.in` source templates are retained in `templates/`; previously generated scripts of the inactive mode are archived to `.configuration_backups/`.
 
@@ -79,7 +79,7 @@ Source code in this repository is licensed under **BSD-3-Clause**; see [`LICENSE
 
 The project team reports that no additional institutional approval is required. Before making the code public, finish the remaining provenance, portability, example-data, and citation tasks listed in [`docs/PRE_PUBLICATION_CHECKLIST.md`](docs/PRE_PUBLICATION_CHECKLIST.md).
 
-**Scope of this release candidate:** the ten analysis templates, SLURM master and surviving analysis helpers retain the tested analysis logic. The central configurator now injects `REFERENCE_ROOT` into nucleotide and protein reference paths; this is a packaging/installation adjustment that requires a new HPC validation. The nr/RefSeq database downloader is newly added and likewise not part of the previously validated compute pipeline. HPC module and SLURM directives may require customization. The previously tested in-house pipeline remains the source of the analysis logic; **ViroXplore-HPC** is its public project name. The renamed stage wrappers should be validated on the target HPC before publication.
+**Validation scope:** The ten analysis templates, SLURM master and supporting analysis helpers retain the tested RC11 FIX3 analysis logic. The rebuilt v1.0.0 container was subsequently tested with both PE and SE F17 inputs on the IBU cluster; see the image-specific validation report below. These tests do not establish portability to other clusters, diagnostic performance, or a byte-identical rebuild. The optional nr/RefSeq database downloader has **not** been revalidated end-to-end from fresh downloads. HPC module names and SLURM settings may require adaptation on other systems.
 
 ### RC11 FIX3 container validation
 
@@ -87,7 +87,7 @@ Both PE and SE were completed on the IBU SLURM cluster in the RC11 FIX3 test ser
 
 ## v1.0.0 container rebuild
 
-For the portable build instructions, smoke test and manifest collection, see [`container/README.md`](container/README.md) and [`docs/CONTAINER_RELEASE_VALIDATION.md`](docs/CONTAINER_RELEASE_VALIDATION.md). The source recipe is prepared for IBU re-testing; a new SIF is **not yet** considered PE/SE-validated.
+For the portable build instructions, smoke test and manifest collection, see [`container/README.md`](container/README.md) and [`docs/CONTAINER_RELEASE_VALIDATION.md`](docs/CONTAINER_RELEASE_VALIDATION.md). The rebuilt v1.0.0 image has completed PE and SE workflow tests on IBU; this does not guarantee compatibility with other HPC systems.
 
 ## v1.0.0 release evidence and limitations
 
