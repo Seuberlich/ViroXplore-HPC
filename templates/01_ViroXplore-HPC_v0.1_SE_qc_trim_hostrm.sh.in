@@ -1,0 +1,94 @@
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+#SBATCH --mem=80g
+#SBATCH --partition=PUT_SLURM_PARTITION_HERE
+#SBATCH --job-name=01_qc_trim_hostrm
+#SBATCH --output=PUT_PATH_HERE/01_qc_trim_hostrm.%A.%a.o
+#SBATCH --error=PUT_PATH_HERE/01_qc_trim_hostrm.%A.%a.e
+#SBATCH --array=PUT_ARRAY_HERE
+#SBATCH -n PUT_NUMBEROFSAMPLES_HERE
+
+########################################
+#####THIS SCRIPT RUNS
+#####FASTQC FOR MANUAL QUALITY CONTROL
+#####FASTP FOR TRIMMING
+#####STAR FOR HOST REMOVAL
+########################################
+
+#####DIRECTORIES
+FILE_NAME=PUT_SAMPLE_NAMES_HERE
+OUTPUT_DIRECTORY="PUT_PATH_HERE"
+READ_DIRECTORY=$OUTPUT_DIRECTORY"/reads/"
+SAMPLE_NAME=${FILE_NAME[$SLURM_ARRAY_TASK_ID-1]}
+QC_DIR=$OUTPUT_DIRECTORY"/01_fastqc"
+TRIM_DIR=$OUTPUT_DIRECTORY"/02_trimmed"
+ALIG_DIR=$OUTPUT_DIRECTORY"/03_aligned"
+REFERENCE_GENOME_LOCATION="PUT_HOST_GENOME_HERE"
+################
+#####SOFTWARE
+MODULE_FASTQC=/mnt/ss/sib/ibu/rocky8/2023072800/software/FastQC/0.11.9-Java-11;
+MODULE_FASTP=/mnt/ss/sib/rocky8/2023072800/software/fastp/0.23.4-GCC-10.3.0;
+MODULE_STAR=/mnt/ss/sib/ibu/rocky8/2023072800/software/STAR/2.7.9a-GCC-10.3.0;
+#############
+
+### Validate mode-specific input files before QC and downstream analyses.
+echo "ViroXplore-HPC: input mode: SE (sample: ${SAMPLE_NAME})"
+for REQUIRED_READ in "${READ_DIRECTORY}${SAMPLE_NAME}_R1.fastq.gz"; do
+    if [[ ! -s "$REQUIRED_READ" ]]; then
+        echo "ERROR: missing or empty input FASTQ for SE: $REQUIRED_READ" >&2
+        exit 1
+    fi
+done
+if [[ -f "${READ_DIRECTORY}${SAMPLE_NAME}_R2.fastq.gz" ]]; then
+    echo "WARNING: SE mode ignores ${READ_DIRECTORY}${SAMPLE_NAME}_R2.fastq.gz (choose PE if both mates must be analysed)" >&2
+fi
+
+###Starting pipeline
+echo "ViroXplore-HPC: job for ${SAMPLE_NAME} runs on host $(hostname)"
+echo Job start time: `date`
+
+mkdir -p $OUTPUT_DIRECTORY"/tmp/"$SAMPLE_NAME
+TMPDIR="$OUTPUT_DIRECTORY/tmp/$SAMPLE_NAME"
+mkdir -p $OUTPUT_DIRECTORY/{01_fastqc,02_trimmed,03_aligned,04_assembly,04b_mapping,05_discovery,06_remapping}
+
+cd $TMPDIR
+
+###QC
+echo Starting QC. `date`
+module load FastQC/0.11.9-Java-11
+FASTQC_THREADS="${SLURM_CPUS_PER_TASK:-${SLURM_NPROCS:-1}}"
+if ! fastqc --threads "$FASTQC_THREADS" --outdir "$QC_DIR" \
+    "${READ_DIRECTORY}${SAMPLE_NAME}_R1.fastq.gz"; then
+    echo "ERROR: FastQC failed for SE sample ${SAMPLE_NAME}" >&2
+    exit 1
+fi
+for ext in html zip; do
+    report="${QC_DIR}/${SAMPLE_NAME}_R1_fastqc.${ext}"
+    if [[ ! -s "$report" ]]; then
+        echo "ERROR: FastQC report missing: $report" >&2
+        exit 1
+    fi
+done
+module unload FastQC/0.11.9-Java-11
+echo QC done. `date`
+
+###Trimming
+echo Starting trimming. `date`
+module load fastp/0.23.4-GCC-10.3.0
+fastp -i "$READ_DIRECTORY""$SAMPLE_NAME"_R1.fastq.gz -o $SAMPLE_NAME"_trimmed_R1.fastq" -l 33 -W 4 -M 15 -5 3 -3 3 -f 12 -F 9
+module unload fastp/0.23.4-GCC-10.3.0
+echo Trimming done. `date`
+
+###Host removal
+echo Starting host removal. `date`
+module load STAR/2.7.9a-GCC-10.3.0
+STAR --genomeDir $REFERENCE_GENOME_LOCATION --runThreadN $SLURM_NPROCS --readFilesIn $SAMPLE_NAME"_trimmed_R1.fastq" --outReadsUnmapped Fastx --outFileNamePrefix $SAMPLE_NAME --outSAMtype None
+pigz -p $SLURM_NPROCS *trimmed_R*.fastq
+mv *trimmed_R*.fastq.gz $TRIM_DIR
+mv $SAMPLE_NAME"Unmapped.out.mate1" $SAMPLE_NAME"Unmapped.out.mate1.fastq"
+pigz -p $SLURM_NPROCS *Unmapped.out.mate*.fastq
+cp *Unmapped*.fastq.gz $ALIG_DIR
+module unload STAR/2.7.9a-GCC-10.3.0
+echo Host removal done, unmapped reads are in $ALIG_DIR.
+echo QC, trim and hostremoval of $SAMPLE_NAME end time: `date`
