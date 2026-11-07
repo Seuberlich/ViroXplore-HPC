@@ -1,0 +1,12 @@
+*.sif
+*.tar
+*.fastq
+*.fastq.gz
+*.fasta
+*.fa
+*.fna
+*.faa
+*.dmnd
+*.bam
+*.sam
+.pipeline_configuration.json
