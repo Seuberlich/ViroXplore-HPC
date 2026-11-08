@@ -1,0 +1,27 @@
+# Runtime dependency ranges for v1.0.0. These are not an exact lockfile.
+# Save the resolved micromamba package manifest and SIF SHA256 after every build.
+# RC11 uses local SQLite for RefSeq annotations and does not require EDirect.
+name: base
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python>=3.11,<3.14
+  - fastqc
+  - fastp
+  - star
+  - spades>=4,<5
+  - seqkit
+  - bowtie2>=2.5,<3
+  - samtools>=1.20,<2
+  - bedtools
+  - diamond=2.2.5
+  - ucsc-splitfilebycolumn
+  - r-base>=4.4,<5
+  - r-readr
+  - pigz
+  - blast
+  - curl
+  - wget
+  - perl

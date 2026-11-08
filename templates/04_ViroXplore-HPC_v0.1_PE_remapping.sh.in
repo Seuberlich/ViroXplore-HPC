@@ -1,0 +1,129 @@
+#!/bin/bash
+
+#SBATCH --time=12:00:00
+#SBATCH --mem=10g
+#SBATCH --partition=PUT_SLURM_PARTITION_HERE
+#SBATCH --job-name=04_remapping_viralhits
+#SBATCH --output=PUT_PATH_HERE/04_remapping_viralhits.%A.%a.o
+#SBATCH --error=PUT_PATH_HERE/04_remapping_viralhits.%A.%a.e
+#SBATCH --array=PUT_ARRAY_HERE
+#SBATCH -n PUT_NUMBEROFSAMPLES_HERE
+
+########################################
+#####THIS SCRIPT RUNS
+#####THE REMAPPING OF THE VIRALHITS
+#####FROM 03_v0.1_discovery.sh
+########################################
+
+#####DIRECTORIES
+# RC9: fail loudly on mapping/plotting failures and prevent stale outputs.
+set -Eeuo pipefail
+FILE_NAME=PUT_SAMPLE_NAMES_HERE
+OUTPUT_DIRECTORY="PUT_PATH_HERE/06_remapping"
+SAMPLE_NAME=${FILE_NAME[$SLURM_ARRAY_TASK_ID-1]}
+ASSEMBLY_DIRECTORY="PUT_PATH_HERE/04_assembly"
+ASSEMBLY_FASTA="scaffolds.fasta"
+ALIGNED_DIRECTORY="PUT_PATH_HERE/03_aligned"
+SORTED_BAM_FILE=$SAMPLE_NAME"_mappedtoassembly_sorted.bam"
+READ1=$ALIGNED_DIRECTORY"/"$SAMPLE_NAME"Unmapped.out.mate1.fastq.gz"
+READ2=$ALIGNED_DIRECTORY"/"$SAMPLE_NAME"Unmapped.out.mate2.fastq.gz"
+################
+#####SOFTWARE
+MODULE_BOWTIE2=/mnt/ss/sib/ibu/rocky8/2023072800/software/Bowtie2/2.3.4.1-foss-2021a;
+MODULE_SAMTOOLS=/mnt/ss/sib/ibu/rocky8/2023072800/software/SAMtools/1.13-GCC-10.3.0;
+MODULE_BEDTOOLS=/mnt/ss/sib/ibu/rocky8/2023072800/software/BEDTools/2.30.0-GCC-10.3.0;
+MODULE_RSCRIPT=R-bundle-IBU/2023072800-foss-2021a-R-4.2.1;
+MODULE_UCSC_UTILS=/mnt/ss/sib/ibu/rocky8/2023072800/software/UCSC-Utils/448-foss-2021a;
+#############
+######OTHER VARIABLES
+PLOTTING_SCRIPT=PUT_PATH_HERE/tools/getplots2.r
+
+
+###Starting pipeline
+echo "ViroXplore-HPC: job for ${SAMPLE_NAME} runs on host $(hostname)"
+echo Job start time: `date`
+
+# A fresh subdirectory prevents NODE_* data from earlier assemblies being reused.
+# Retain run-specific intermediate files for troubleshooting / audit.
+RUN_TOKEN="${SLURM_JOB_ID:-manual_$$}_${SLURM_ARRAY_TASK_ID:-1}"
+TMPDIR="$OUTPUT_DIRECTORY/tmp/$SAMPLE_NAME/$RUN_TOKEN"
+if [[ -e "$TMPDIR" ]]; then
+    echo "ERROR: run directory already exists: $TMPDIR" >&2
+    exit 1
+fi
+mkdir -p "$TMPDIR"
+cd "$TMPDIR"
+
+###REMAPPING
+echo Starting to remap reads to $ASSEMBLY_FASTA"." `date`
+module load Bowtie2/2.3.4.1-foss-2021a
+cp $ASSEMBLY_DIRECTORY"/"$SAMPLE_NAME"/"$ASSEMBLY_FASTA $TMPDIR
+bowtie2-build -f $ASSEMBLY_FASTA $ASSEMBLY_FASTA --threads $SLURM_NPROCS
+bowtie2 -x $ASSEMBLY_FASTA -1 $READ1 -2 $READ2 -S $SAMPLE_NAME"_mappedtoassembly.sam" --no-unal --threads $SLURM_NPROCS
+module unload Bowtie2/2.3.4.1-foss-2021a
+
+module load SAMtools/1.13-GCC-10.3.0
+samtools view -bS $SAMPLE_NAME"_mappedtoassembly.sam" --threads $SLURM_NPROCS | samtools sort -o $SAMPLE_NAME"_mappedtoassembly_sorted.bam" --threads $SLURM_NPROCS
+cp $SAMPLE_NAME"_mappedtoassembly_sorted.bam" $OUTPUT_DIRECTORY
+rm *.sam
+
+# Extract the exact IDs from the current run's discovery FASTA.
+VIRAL_FASTA="$ASSEMBLY_DIRECTORY/$SAMPLE_NAME/finalviralhits.fasta"
+if [[ ! -s "$VIRAL_FASTA" ]]; then
+    echo "ERROR: finalviralhits.fasta is missing or empty: $VIRAL_FASTA" >&2
+    exit 1
+fi
+awk '/^>/{sub(/^>/,"",$1); print $1}' "$VIRAL_FASTA" | LC_ALL=C sort -u > extract.list
+if [[ ! -s extract.list ]]; then
+    echo "ERROR: no viral contig IDs in $VIRAL_FASTA" >&2
+    exit 1
+fi
+
+# Only current-run read mappings and current-run viral contigs may be plotted.
+echo "Remapping done. $(date)"
+echo "Producing coverage plots. $(date)"
+module load BEDTools/2.30.0-GCC-10.3.0
+bedtools genomecov -ibam "$SORTED_BAM_FILE" -d > "${SAMPLE_NAME}_bedoutput"
+# Exact first-field equality avoids substring hits (e.g. NODE_1 vs NODE_10).
+awk 'BEGIN {FS=OFS="\t"} NR==FNR {wanted[$1]=1; next} ($1 in wanted) {print}' \
+    extract.list "${SAMPLE_NAME}_bedoutput" > "${SAMPLE_NAME}_bedoutput_final"
+module unload BEDTools/2.30.0-GCC-10.3.0
+if [[ ! -s "${SAMPLE_NAME}_bedoutput_final" ]]; then
+    echo 'ERROR: no coverage positions for selected viral contigs' >&2
+    exit 1
+fi
+
+module load UCSC-Utils/448-foss-2021a
+module load MariaDB/10.6.4-GCC-10.3.0
+splitFileByColumn "${SAMPLE_NAME}_bedoutput_final" ./
+module unload UCSC-Utils/448-foss-2021a
+module unload MariaDB/10.6.4-GCC-10.3.0
+
+shopt -s nullglob
+coverage_tables=( NODE_* )
+if [[ ${#coverage_tables[@]} -eq 0 ]]; then
+    echo 'ERROR: splitFileByColumn produced no NODE_* coverage tables' >&2
+    exit 1
+fi
+module load R-bundle-IBU/2023072800-foss-2021a-R-4.2.1
+Rscript "$PLOTTING_SCRIPT"
+module unload R-bundle-IBU/2023072800-foss-2021a-R-4.2.1
+pdfs=( NODE_*.pdf )
+if [[ ${#pdfs[@]} -ne ${#coverage_tables[@]} ]]; then
+    echo "ERROR: expected ${#coverage_tables[@]} coverage PDFs but found ${#pdfs[@]}" >&2
+    exit 1
+fi
+
+# Write outputs atomically: a failed run does not replace previous valid plots.
+archive="$OUTPUT_DIRECTORY/${SAMPLE_NAME}viralhits_plots.tar.gz"
+archive_tmp="$TMPDIR/${SAMPLE_NAME}viralhits_plots.tar.gz"
+tar -czf "$archive_tmp" -- "${coverage_tables[@]}" "${pdfs[@]}"
+cp -- "$archive_tmp" "${archive}.part_${RUN_TOKEN}"
+mv -f -- "${archive}.part_${RUN_TOKEN}" "$archive"
+{
+    printf 'sample\tjob_token\tviral_contigs_with_coverage\tcoverage_pdfs\tarchive\n'
+    printf '%s\t%s\t%s\t%s\t%s\n' "$SAMPLE_NAME" "$RUN_TOKEN" \
+        "${#coverage_tables[@]}" "${#pdfs[@]}" "$archive"
+} > "$OUTPUT_DIRECTORY/${SAMPLE_NAME}_coverage_runinfo.tsv"
+shopt -u nullglob
+echo "Plotting done: ${#pdfs[@]} clean, run-specific coverage PDFs. $(date)"

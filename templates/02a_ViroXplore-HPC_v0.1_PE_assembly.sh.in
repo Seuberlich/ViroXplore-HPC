@@ -1,0 +1,62 @@
+#!/bin/bash
+
+#SBATCH --time=96:00:00
+#SBATCH --mem=250g
+#SBATCH --partition=PUT_SLURM_PARTITION_HERE
+#SBATCH --job-name=02a_assembly
+#SBATCH --output=PUT_PATH_HERE/02a_assembly.%A.%a.o
+#SBATCH --error=PUT_PATH_HERE/02a_assembly.%A.%a.e
+#SBATCH --array=PUT_ARRAY_HERE
+#SBATCH -n PUT_NUMBEROFSAMPLES_HERE
+
+
+########################################
+#####THIS SCRIPT RUNS
+#####SPADES FOR THE DE-NOVO ASSEMBLY
+########################################
+
+#####DIRECTORIES
+FILE_NAME=PUT_SAMPLE_NAMES_HERE
+OUTPUT_DIRECTORY="PUT_PATH_HERE"
+SAMPLE_NAME=${FILE_NAME[$SLURM_ARRAY_TASK_ID-1]}
+ALIG_DIR=$OUTPUT_DIRECTORY"/03_aligned/"
+################
+#####SOFTWARE
+MODULE_SPADES=/mnt/ss/sib/ibu/rocky8/2023072800/software/SPAdes/3.15.3-GCC-10.3.0;
+MODULE_SEQKIT=/mnt/ss/sib/ibu/rocky8/2023072800/software/SeqKit/2.6.1;
+#############
+
+###Starting pipeline
+echo "ViroXplore-HPC: job for ${SAMPLE_NAME} runs on host $(hostname)"
+echo Job start time: `date`
+
+mkdir -p $OUTPUT_DIRECTORY"/tmp/"$SAMPLE_NAME
+TMPDIR="$OUTPUT_DIRECTORY/tmp/$SAMPLE_NAME"
+
+cd $TMPDIR
+
+###ASSEMBLY
+echo Starting assembly. `date`
+
+cp "$ALIG_DIR""$SAMPLE_NAME"* .
+gunzip *.fastq.gz
+READ1=$SAMPLE_NAME"Unmapped.out.mate1.fastq"
+READ2=$SAMPLE_NAME"Unmapped.out.mate2.fastq"
+
+module load SPAdes/3.15.3-GCC-10.3.0
+echo now starting SPAdes, $SAMPLE_NAME
+spades.py --pe1-1 $READ1 --pe1-2 $READ2 -o $SAMPLE_NAME -t $SLURM_NPROCS -m 250
+module unload SPAdes/3.15.3-GCC-10.3.0
+
+rm *.fastq
+
+cp -R $SAMPLE_NAME $OUTPUT_DIRECTORY"/04_assembly/"
+
+cd $OUTPUT_DIRECTORY"/04_assembly/"$SAMPLE_NAME"/"
+
+##filter scaffolds to be used
+module load SeqKit/2.6.1
+seqkit seq -m 500 scaffolds.fasta > scaffolds_filtered.fasta
+module unload SeqKit/2.6.1
+
+echo Assembly done. `date`

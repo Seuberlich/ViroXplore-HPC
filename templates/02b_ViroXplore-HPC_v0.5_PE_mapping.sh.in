@@ -1,0 +1,260 @@
+#!/bin/bash
+
+#SBATCH --time=24:00:00
+#SBATCH --mem=80g
+#SBATCH --partition=PUT_SLURM_PARTITION_HERE
+#SBATCH --job-name=02b_mapping_RS
+#SBATCH --output=PUT_PATH_HERE/02a_mapping_RS.%A.%a.o
+#SBATCH --error=PUT_PATH_HERE/02a_mapping_RS.%A.%a.e
+#SBATCH --array=PUT_ARRAY_HERE
+#SBATCH -n PUT_NUMBEROFSAMPLES_HERE
+
+# RC10: offline reference annotation permits parallel SLURM array tasks.
+
+########################################
+#####THIS SCRIPT RUNS
+#####THE MAPPING OF THE QUALITY-FILTERED
+#####NON-HOST READS AGAINST THE REFSEQ
+#####VIRUS DATABASE CREATED USING
+#####ViroXplore-HPC reference setup script
+########################################
+
+#####DIRECTORIES
+FILE_NAME=PUT_SAMPLE_NAMES_HERE
+PROJECT_DIRECTORY="PUT_PATH_HERE"
+OUTPUT_DIRECTORY="$PROJECT_DIRECTORY"/04b_mapping
+SAMPLE_NAME=${FILE_NAME[$SLURM_ARRAY_TASK_ID-1]}
+READ_DIRECTORY="$PROJECT_DIRECTORY"/03_aligned/
+READ1="$READ_DIRECTORY""$SAMPLE_NAME"Unmapped.out.mate1.fastq.gz
+READ2="$READ_DIRECTORY""$SAMPLE_NAME"Unmapped.out.mate2.fastq.gz
+BT2_RS_INDEX_DIRECTORY="PUT_REFERENCE_ROOT_HERE/refseq_viral/"
+BT2_RS_INDEX_NAME="refseq_viral"
+BT2_RS_INDEX_FNA="$BT2_RS_INDEX_NAME".fna
+################
+#####SOFTWARE
+MODULE_BEDTOOLS=/mnt/ss/sib/ibu/rocky8/2023072800/software/BEDTools/2.30.0-GCC-10.3.0;
+MODULE_SAMTOOLS=/mnt/ss/sib/ibu/rocky8/2023072800/software/SAMtools/1.13-GCC-10.3.0;
+MODULE_BOWTIE2=/mnt/ss/sib/ibu/rocky8/2023072800/software/Bowtie2/2.3.4.1-foss-2021a;
+MODULE_UCSC=/mnt/ss/sib/ibu/rocky8/2023072800/software/UCSC-Utils/448-foss-2021a;
+MODULE_RSCRIPT=R-bundle-IBU/2023072800-foss-2021a-R-4.2.1;
+MODULE_MARIADB=MariaDB/10.6.4-GCC-10.3.0;
+#############
+#####OTHER VARIABLES
+PLOTTING_SCRIPT="PUT_PATH_HERE/tools/getplots_depths.r"
+
+###Starting pipeline
+echo "ViroXplore-HPC: job for ${SAMPLE_NAME} runs on host $(hostname)"
+echo Job start time: `date`
+
+# Per-job directory prevents accidental reuse of EDirect, BAM or plot artifacts.
+RUN_TOKEN="${SLURM_JOB_ID:-manual_$$}_${SLURM_ARRAY_TASK_ID:-1}"
+TMPDIR="$OUTPUT_DIRECTORY/tmp/$SAMPLE_NAME/$RUN_TOKEN"
+if [[ -e "$TMPDIR" ]]; then
+    echo "ERROR: run directory already exists: $TMPDIR" >&2
+    exit 1
+fi
+mkdir -p "$TMPDIR"
+cd "$TMPDIR"
+
+# Fail fast before Bowtie2 if the offline database was not installed.
+OFFLINE_DB="PUT_REFERENCE_ROOT_HERE/refseq_viral/refseq_viral_metadata.sqlite"
+[[ -s "$OFFLINE_DB" ]] || { echo "ERROR: offline RefSeq metadata DB missing: $OFFLINE_DB" >&2; exit 1; }
+
+###ASSEMBLY
+echo Starting mapping. `date`
+
+module load Bowtie2/2.3.4.1-foss-2021a
+bowtie2 -x "$BT2_RS_INDEX_DIRECTORY""$BT2_RS_INDEX_FNA" -1 $READ1 -2 $READ2 -S "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME".sam --threads $SLURM_NPROCS --no-unal
+module unload Bowtie2/2.3.4.1-foss-2021a
+
+module load SAMtools/1.13-GCC-10.3.0
+samtools view -bS "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME".sam --threads $SLURM_NPROCS | samtools sort -o "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam --threads $SLURM_NPROCS
+samtools index "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam
+module unload SAMtools/1.13-GCC-10.3.0
+echo Mapping finished. `date`
+
+
+echo Starting to parse tables. `date`
+MAP_MIN_COV_BREADTH=0
+#EXTRACT ALL ACCESSIONS WITH >0% OF THE GENOME COVERED (AT LEAST 1 READ MAPPED)
+
+##fulltable
+module load SAMtools/1.13-GCC-10.3.0
+samtools coverage "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam | awk -v MBR="$MAP_MIN_COV_BREADTH" 'BEGIN {FS=OFS="\t"} $1 !~ /^#/ && ($6+0)>MBR {print}' | sort -t$'\t' -k1,1 > "$SAMPLE_NAME"mappingtable_intermed.tsv
+module unload SAMtools/1.13-GCC-10.3.0
+cut -f1 "$SAMPLE_NAME"mappingtable_intermed.tsv | sort > "$SAMPLE_NAME"accessions.list
+
+# RC10: completely OFFLINE accession/TaxID/name annotation. The reference
+# metadata database is prepared once, before SLURM analysis, from the matching
+# RefSeq GBFF and NCBI taxonomy snapshot. No external service is queried here.
+OFFLINE_LOOKUP="PUT_PATH_HERE/tools/offline_ncbi_metadata.py"
+OFFLINE_DB="PUT_REFERENCE_ROOT_HERE/refseq_viral/refseq_viral_metadata.sqlite"
+if [[ ! -s "$OFFLINE_LOOKUP" || ! -s "$OFFLINE_DB" ]]; then
+    echo "ERROR: offline RefSeq metadata missing. Run extras/database_builder/setup_refseq_offline_metadata.sh with REFERENCE_ROOT first." >&2
+    exit 1
+fi
+python3 "$OFFLINE_LOOKUP" lookup \
+    --database "$OFFLINE_DB" \
+    --reference-fasta "$BT2_RS_INDEX_DIRECTORY$BT2_RS_INDEX_FNA" \
+    --accessions "$SAMPLE_NAME"accessions.list \
+    --accession-output "$SAMPLE_NAME"accessions.tmp \
+    --taxonomy-output "$SAMPLE_NAME"sciname.all.tmp || exit 1
+
+# Exclude identifiable bacteriophages from the RESULT TABLE by default.
+# Disable with VIROXPLORE_EXCLUDE_PHAGES=0 if phage results are needed.
+# Raw alignments/BAM files remain unchanged.
+VIROXPLORE_EXCLUDE_PHAGES="${VIROXPLORE_EXCLUDE_PHAGES:-1}"
+if [[ "$VIROXPLORE_EXCLUDE_PHAGES" == "1" ]]; then
+    python3 "PUT_PATH_HERE/tools/filter_refseq_phages.py" \
+        --accession-input "$SAMPLE_NAME"accessions.tmp \
+        --taxonomy-input "$SAMPLE_NAME"sciname.all.tmp \
+        --accession-output "$SAMPLE_NAME"accessions.filtered.tmp \
+        --taxonomy-output "$SAMPLE_NAME"sciname.filtered.tmp || exit 1
+    mv "$SAMPLE_NAME"accessions.filtered.tmp "$SAMPLE_NAME"accessions.tmp
+    mv "$SAMPLE_NAME"sciname.filtered.tmp "$SAMPLE_NAME"sciname.all.tmp
+elif [[ "$VIROXPLORE_EXCLUDE_PHAGES" != "0" ]]; then
+    echo "ERROR: VIROXPLORE_EXCLUDE_PHAGES must be 0 or 1" >&2
+    exit 1
+fi
+
+awk -F'\t' 'tolower($3) == "viruses"' "$SAMPLE_NAME"sciname.all.tmp \
+    | sort -t$'\t' -k1,1 -u \
+    > "$SAMPLE_NAME"sciname.tmp
+
+# Sort accessions by TaxID for the next join.
+sort -t$'\t' -k2,2 "$SAMPLE_NAME"accessions.tmp > "$SAMPLE_NAME"accessions.by_taxid.tmp
+
+## Keep only accessions that are still returned by NCBI, then sort by accession (join key).
+cut -f1 "$SAMPLE_NAME"accessions.tmp | while read -r acc; do
+    grep -F -m1 -w "$acc" "$SAMPLE_NAME"mappingtable_intermed.tsv || true
+done | sort -t$'\t' -k1,1 > "$SAMPLE_NAME"mappingtable.tsv
+
+# Join taxonomy (TaxID in field 1) with accession metadata (TaxID in field 2).
+# Both inputs are explicitly sorted on the join key.
+join -t $'\t' -1 1 -2 2 \
+    "$SAMPLE_NAME"sciname.tmp \
+    "$SAMPLE_NAME"accessions.by_taxid.tmp \
+    > "$SAMPLE_NAME"mappedingtable_extrainfo.by_taxid.tmp
+
+# The resulting extra-info table contains accession in field 4.
+# Sort it by accession before joining to the mapping table.
+sort -t$'\t' -k4,4 "$SAMPLE_NAME"mappedingtable_extrainfo.by_taxid.tmp \
+    > "$SAMPLE_NAME"mappedingtable_extrainfo.tmp
+
+# Join files by accession. mappingtable.tsv is sorted on field 1;
+# mappedingtable_extrainfo.tmp is sorted on field 4.
+join -t $'\t' -1 1 -2 4 \
+    "$SAMPLE_NAME"mappingtable.tsv \
+    "$SAMPLE_NAME"mappedingtable_extrainfo.tmp \
+    | sort -t$'\t' -k1,1 \
+    > "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_full.tsv
+
+
+#add amount of reads in non-complex regions and 10homopolymers
+module load SAMtools/1.13-GCC-10.3.0
+samtools view -b -L "$BT2_RS_INDEX_DIRECTORY""$BT2_RS_INDEX_FNA".masked.bed "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam > "$SAMPLE_NAME"masked.bam
+samtools index "$SAMPLE_NAME"masked.bam
+samtools idxstats "$SAMPLE_NAME"masked.bam | awk '{print $1"\t"$3}' | sort -t$'\t' -k1,1 > "$SAMPLE_NAME"masked.stats.tsv
+
+samtools view -b -L "$BT2_RS_INDEX_DIRECTORY""$BT2_RS_INDEX_FNA".10homopolymers.bed "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam > "$SAMPLE_NAME"10homopolymers.bam
+samtools index "$SAMPLE_NAME"10homopolymers.bam
+samtools idxstats "$SAMPLE_NAME"10homopolymers.bam | awk '{print $1"\t"$3}' | sort -t$'\t' -k1,1 > "$SAMPLE_NAME"10homopolymers.stats.tsv
+module unload SAMtools/1.13-GCC-10.3.0
+
+sort -t$'\t' -k1,1 "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_full.tsv > "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_full.sorted.tsv
+join -t $'\t' -a 1 -e 0 -o auto -1 1 -2 1 "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_full.sorted.tsv "$SAMPLE_NAME"10homopolymers.stats.tsv > "$SAMPLE_NAME"_w10homopolymers.tsv
+sort -t$'\t' -k1,1 "$SAMPLE_NAME"_w10homopolymers.tsv > "$SAMPLE_NAME"_w10homopolymers.sorted.tsv
+join -t $'\t' -a 1 -e 0 -o auto -1 1 -2 1 "$SAMPLE_NAME"_w10homopolymers.sorted.tsv "$SAMPLE_NAME"masked.stats.tsv | sort -t$'\t' -k1,1 > "$SAMPLE_NAME"prefinal_wboth.tsv
+
+# Always generate exactly 16 columns (including an explicit yes/no
+# contamination indicator). Previous versions had 15 for non-contaminants,
+# causing an apparent extra header field.
+awk -F'\t' 'BEGIN {OFS="\t"}
+    FILENAME == ARGV[1] {if ($1 != "") contam[$1]=1; next}
+    NF != 15 {printf "ERROR: expected 15 prefinal fields, got %d for %s\n", NF, $1 > "/dev/stderr"; exit 1}
+    {print $0, (($10 in contam) ? "yes" : "no")}' \
+    "$BT2_RS_INDEX_DIRECTORY"contam_suppl_table_3.taxids.list \
+    "$SAMPLE_NAME"prefinal_wboth.tsv \
+    > "$SAMPLE_NAME"final_wboth.unsorted.tmp || exit 1
+sort -r -g -k6,6 "$SAMPLE_NAME"final_wboth.unsorted.tmp > "$SAMPLE_NAME"final_wboth.tsv || exit 1
+# Check before writing the final spreadsheet.
+awk -F'\t' 'NF != 16 {exit 1}' "$SAMPLE_NAME"final_wboth.tsv || { echo "ERROR: mapping output must contain 16 columns" >&2; exit 1; }
+
+echo Tables parsed, now plotting. `date`
+
+module load SAMtools/1.13-GCC-10.3.0
+samtools depth -a -d 0 "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam > "$SAMPLE_NAME".depth
+module unload SAMtools/1.13-GCC-10.3.0
+
+if [ ! -s "$SAMPLE_NAME.depth" ]; then
+    echo "ERROR: depth file is missing or empty; plotting cannot continue." >&2
+    exit 1
+fi
+
+if [ ! -f "$PLOTTING_SCRIPT" ]; then
+    echo "ERROR: plotting script not found: $PLOTTING_SCRIPT" >&2
+    exit 1
+fi
+
+mkdir -p plotting
+cd plotting
+
+# UCSC splitFileByColumn on this cluster depends on libmariadb.so.3.
+module load MariaDB/10.6.4-GCC-10.3.0
+module load UCSC-Utils/448-foss-2021a
+
+splitFileByColumn ../"$SAMPLE_NAME".depth .
+
+split_status=$?
+
+module unload UCSC-Utils/448-foss-2021a
+module unload MariaDB/10.6.4-GCC-10.3.0
+
+if [ "$split_status" -ne 0 ]; then
+    echo "ERROR: splitFileByColumn failed; plotting cannot continue." >&2
+    exit 1
+fi
+
+cut -f1 ../"$SAMPLE_NAME"final_wboth.tsv | sort > NEW
+
+if [ ! -s NEW ]; then
+    echo "WARNING: no viral accessions remain after filtering; no plots will be produced." >&2
+    cd ..
+else
+    split -l 1 NEW
+
+    module load R-bundle-IBU/2023072800-foss-2021a-R-4.2.1
+    Rscript "$PLOTTING_SCRIPT" NEW
+    r_status=$?
+    module unload R-bundle-IBU/2023072800-foss-2021a-R-4.2.1
+
+    if [ "$r_status" -ne 0 ]; then
+        echo "ERROR: R plotting script failed." >&2
+        exit 1
+    fi
+
+    rm -f NEW x*
+
+    shopt -s nullglob
+    pdfs=( *.depth.pdf )
+    if [ "${#pdfs[@]}" -eq 0 ]; then
+        echo "ERROR: R completed but no *.depth.pdf files were produced." >&2
+        exit 1
+    fi
+
+    tar -cvzf ../"$SAMPLE_NAME".plots.tar.gz "${pdfs[@]}"
+    rm -f -- *.depth*
+    shopt -u nullglob
+
+    echo Plotting done, copying files. `date`
+    cd ..
+fi
+
+#ADD HEADER
+printf 'accession startpos endpos numreads covbases coverage meandepth meanbaseq meanmapq taxid sciname division title 10homopolymerreads lowcomplexityreads kitcontam_asplund2019\n' | tr ' ' '\t' | cat - "$SAMPLE_NAME"final_wboth.tsv > "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME".xls
+
+mv "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME".xls $OUTPUT_DIRECTORY
+mv "$SAMPLE_NAME"_mappedto_"$BT2_RS_INDEX_NAME"_sorted_NUCS.bam* $OUTPUT_DIRECTORY
+if [ -f "$SAMPLE_NAME".plots.tar.gz ]; then
+    mv "$SAMPLE_NAME".plots.tar.gz "$OUTPUT_DIRECTORY"
+fi
