@@ -4,6 +4,7 @@ type: software
 title: "ViroXplore-HPC: an automated SLURM-based workflow for virus discovery from high-throughput sequencing data"
 version: "1.0.0"
 license: "BSD-3-Clause"
+repository-code: "https://github.com/Seuberlich/ViroXplore-HPC"
 authors:
   - family-names: "Koch"
     given-names: "Michel C."
@@ -11,4 +12,4 @@ authors:
   - family-names: "Seuberlich"
     given-names: "Torsten"
     affiliation: "Division of Neurological Sciences, Vetsuisse Faculty, University of Bern, Bern, Switzerland"
-# Add repository-code and DOI after GitHub publication / Zenodo archival.
+# Add the Zenodo DOI after the first GitHub release has been archived.
