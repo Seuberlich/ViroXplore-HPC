@@ -1,0 +1,10 @@
+metric	PE	SE	context
+input_reads	2000000	2000000	PE 1,000,000 pairs; SE 2,000,000 reads concatenated from R1 and R2
+refseq_accessions_after_filtering	42	40	v1.0.0 IBU validation; database-dependent
+refseq_accessions_removed	3	3	v1.0.0 IBU validation; database-dependent
+refseq_coverage_pdfs	42	40	v1.0.0 IBU validation
+diamond_hit_rows	1529	603	v1.0.0 IBU validation
+diamond_excluded_hit_rows	379	102	v1.0.0 IBU validation
+diamond_selected_contigs	66	29	v1.0.0 IBU validation
+contig_coverage_pdfs	66	29	v1.0.0 IBU validation
+refseq_alignment_rate_percent	2.35	5.58	v1.0.0 IBU validation
