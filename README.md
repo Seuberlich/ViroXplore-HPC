@@ -1,6 +1,8 @@
-**v1.0.0 source release package (publication pending):** the newly built v1.0.0 Apptainer image was tested on the IBU SLURM cluster with F17 PE and SE inputs. RefSeq annotation and filtered plots were checked. This demonstrates workflow execution in this deployment, not diagnostic performance, cross-cluster portability, or bit-for-bit build reproducibility. See [v1.0.0 image-specific validation](docs/V1_CONTAINER_PE_SE_VALIDATION.md). The complete reference builder has not been validated end-to-end from fresh downloads.
+**v1.0.0 published software release:** the newly built v1.0.0 Apptainer image was tested on the IBU SLURM cluster with F17 PE and SE inputs. RefSeq annotation and filtered plots were checked. This demonstrates workflow execution in this deployment, not diagnostic performance, cross-cluster portability, or bit-for-bit build reproducibility. See [v1.0.0 image-specific validation](docs/V1_CONTAINER_PE_SE_VALIDATION.md). The complete reference builder has not been validated end-to-end from fresh downloads.
 
 # ViroXplore-HPC
+
+**Release DOI:** [10.5281/zenodo.24051799](https://doi.org/10.5281/zenodo.24051799) · [GitHub release v1.0.0](https://github.com/Seuberlich/ViroXplore-HPC/releases/tag/v1.0.0)
 
 **An HPC-oriented, SLURM-managed workflow for virus discovery from high-throughput sequencing (HTS) data.**
 
