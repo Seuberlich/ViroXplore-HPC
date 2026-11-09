@@ -14,6 +14,19 @@ ViroXplore-HPC integrates read quality assessment, trimming and host-read remova
 
 **Important — library-specific trimming:** The stage-01 `fastp` settings were configured for the Lexogen CORALL Total RNA libraries used in validation. They must be reviewed and, where necessary, adapted for other library preparation protocols before analysis. See [library-specific trimming guidance](docs/LIBRARY_SPECIFIC_TRIMMING.md).
 
+## Input FASTQ naming conventions
+
+ViroXplore-HPC expects gzip-compressed FASTQ files in the project's `reads/` directory. The filename suffixes are mandatory for the current stage-01 scripts:
+
+| Sequencing mode | Required files for sample `SAMPLE` |
+| --- | --- |
+| Paired-end (PE) | `SAMPLE_R1.fastq.gz` **and** `SAMPLE_R2.fastq.gz` |
+| Single-end (SE) | `SAMPLE_R1.fastq.gz` |
+
+Both PE mates must use the same sample prefix. In SE mode, the pipeline processes only the `_R1.fastq.gz` file; a corresponding `_R2.fastq.gz` file triggers a warning and is ignored. The master performs an input preflight check and aborts when required FASTQs are missing or empty. For details, see [installation and FASTQ naming](docs/INSTALLATION.md).
+
+**F17 example:** For the publicly archived PE-derived SE dataset, rename `F17_RNA_1Mio_SE.fastq.gz` to `F17_RNA_1Mio_SE_R1.fastq.gz` before running the SE workflow (or create a suitably named copy). This changes only the filename, not the sequence data; see [F17 demo instructions](examples/F17/README.md).
+
 ## Pipeline at a glance
 
 | Stage | Function | Main programs |
