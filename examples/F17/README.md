@@ -12,7 +12,7 @@ The contributing researcher provided the exact subset used during ViroXplore-HPC
 | `F17_RNA_1Mio_R2.fastq.gz` | 1,000,000 | 94,234,695 | `df6da04fd35f059967f79892cd3054356d9912488b7dd37f6898e9b90c6daef0` |
 | `F17_RNA_1Mio_SE.fastq.gz` | 2,000,000 | 185,414,366 | `0b1a0926bb876f33172dd51a8ad9add1d6e95487017b87a68931f8ffd3b94281` |
 
-**The independent Zenodo dataset record has not yet been deposited.** When available, its permanent DOI and download links will be added here. Do not confuse the **software** DOI (10.5281/zenodo.24051799) with the forthcoming **dataset** DOI.
+**F17 demonstration dataset (Zenodo):** [10.5281/zenodo.24083933](https://doi.org/10.5281/zenodo.24083933), deposited by the dataset contributor. The **software** release has a separate DOI: [10.5281/zenodo.24051799](https://doi.org/10.5281/zenodo.24051799). Dataset files and checksums listed above should be compared with the Zenodo record after download.
 
 ## SE test construction
 
