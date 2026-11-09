@@ -4,6 +4,8 @@
 
 **Release DOI:** [10.5281/zenodo.24051799](https://doi.org/10.5281/zenodo.24051799) · [GitHub release v1.0.0](https://github.com/Seuberlich/ViroXplore-HPC/releases/tag/v1.0.0)
 
+**Public F17 demonstration dataset:** [Zenodo DOI 10.5281/zenodo.24083933](https://doi.org/10.5281/zenodo.24083933) · [Readme, PE/SE setup, checksums and expected results](examples/F17/README.md). This dataset contains one million PE read pairs and a derived two-million-read SE test file.
+
 **An HPC-oriented, SLURM-managed workflow for virus discovery from high-throughput sequencing (HTS) data.**
 
 ViroXplore-HPC integrates read quality assessment, trimming and host-read removal, *de novo* assembly, nucleotide-reference mapping, protein similarity searches, taxonomic classification, and remapping/coverage visualization. It supports **paired-end (PE)** and **single-end (SE)** FASTQ data and provides both individual SLURM jobs and a dependency-managed five-stage master submission.
