@@ -111,3 +111,9 @@ For the portable build instructions, smoke test and manifest collection, see [`c
 - [PE/SE validation of the newly rebuilt image](docs/V1_CONTAINER_PE_SE_VALIDATION.md); [checksums and reference identifiers](docs/RELEASE_CHECKSUMS.md).
 - [Library-specific trimming configuration](docs/LIBRARY_SPECIFIC_TRIMMING.md); bundled stage-01 parameters were used for Lexogen CORALL total RNA libraries and must be adapted to other preparations.
 - [Release checklist](docs/PRE_PUBLICATION_CHECKLIST.md). Fresh, fully automated end-to-end database generation, independent deployment, rights-cleared public test data, and a fully locked bitwise-reproducible container build remain open.
+
+## Cross-HPC validation (November 2026)
+
+Subsequent to the original IBU validation, ViroXplore-HPC v1.0.0 was independently deployed on UBELIX, including container construction and reference preparation. All five workflow stages completed in both PE and SE modes on both systems after local scheduler and bind-mount adaptations. Retained RefSeq accession sets were identical between systems (42 for PE and 40 for SE), and all three Bern perch virus genome segments were recovered with greater than 99.3% reference coverage in every run. Selected BEPV nucleotide sequences were identical between systems within each mode, allowing reverse complementation. Additional protein-based candidates showed partial concordance. These findings establish portability and target-specific reproducibility under the tested conditions, not diagnostic performance or complete computational reproducibility.
+
+See the [Cross-HPC validation report](docs/CROSS_HPC_VALIDATION.md) for methods, results, deployment details and limitations. This subsequent validation supersedes the earlier cross-cluster testing status described above.
